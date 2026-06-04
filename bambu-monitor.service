@@ -1,0 +1,14 @@
+[Unit]
+Description=Bambu Lab Printer Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bart/code/bambu-monitor
+ExecStart=/home/bart/code/bambu-monitor/venv/bin/python main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
