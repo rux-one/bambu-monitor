@@ -47,9 +47,7 @@
     font-weight: normal;
   }
 
-  header h1 span {
-    color: var(--green-dim);
-  }
+  header h1 span { color: var(--green-dim); }
 
   #clock {
     font-size: 12px;
@@ -67,6 +65,25 @@
   #ws-status.connected    { color: var(--green); }
   #ws-status.disconnected { color: var(--red); }
 
+  #compact-btn {
+    font: inherit;
+    font-size: 11px;
+    background: none;
+    color: var(--green-dim);
+    border: 1px solid var(--green-dim);
+    padding: 2px 6px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+  }
+
+  #compact-btn:hover { color: var(--green); border-color: var(--green); }
+
+  body.compact #compact-btn {
+    color: var(--green);
+    border-color: var(--green);
+  }
+
+  /* ── Full mode grid ── */
   main {
     padding: 16px;
     display: grid;
@@ -74,6 +91,35 @@
     gap: 16px;
   }
 
+  /* ── Compact mode overrides ── */
+  body.compact main {
+    grid-template-columns: 1fr 1fr;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  body.compact .full-only   { display: none !important; }
+  body.compact .error-none  { display: none !important; }
+
+  body.compact .card {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  body.compact .card-title  { font-size: 11px; }
+  body.compact .badge       { font-size: 9px; }
+
+  body.compact td.label {
+    font-size: 10px;
+    width: 40%;
+  }
+
+  body.compact .card-header {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+  }
+
+  /* ── Cards ── */
   .card {
     border: 1px solid var(--border);
     background: var(--bg-card);
@@ -149,12 +195,6 @@
     margin: 8px 0;
   }
 
-  .progress-wrap {
-    font-family: var(--font);
-    letter-spacing: 0;
-    color: var(--green);
-  }
-
   .temp-hot    { color: var(--amber); }
   .temp-cold   { color: var(--blue); }
   .temp-ok     { color: var(--green); }
@@ -187,8 +227,9 @@
   @media (max-width: 400px) {
     main { padding: 10px; gap: 10px; }
     .card { padding: 10px 12px; }
-    header { padding: 8px 12px; }
-    header h1 { font-size: 12px; }
+    header { padding: 8px 10px; }
+    header h1 { font-size: 11px; }
+    #clock { display: none; }
   }
 </style>
 </head>
@@ -196,7 +237,8 @@
 
 <header>
   <h1><span>//</span> BAMBU MONITOR</h1>
-  <div style="display:flex;gap:12px;align-items:center">
+  <div style="display:flex;gap:8px;align-items:center">
+    <button id="compact-btn" onclick="toggleCompact()">COMPACT</button>
     <span id="ws-status" class="disconnected">WS: OFF</span>
     <span id="clock"></span>
   </div>
@@ -207,6 +249,23 @@
 <script>
 const PRINTER_ORDER = [];
 
+// ── Compact mode ──────────────────────────────────────────────
+let compactMode = localStorage.getItem('compact') !== '0';
+
+function applyCompact() {
+  document.body.classList.toggle('compact', compactMode);
+  document.getElementById('compact-btn').textContent = compactMode ? '[FULL]' : '[COMPACT]';
+}
+
+function toggleCompact() {
+  compactMode = !compactMode;
+  localStorage.setItem('compact', compactMode ? '1' : '0');
+  applyCompact();
+}
+
+applyCompact();
+
+// ── Helpers ───────────────────────────────────────────────────
 function val(v, fallback = '---') {
   return (v !== undefined && v !== null && v !== '') ? v : fallback;
 }
@@ -247,7 +306,7 @@ function renderAMS(amsData) {
     html += '<div class="ams-grid">';
     for (const tray of (unit.tray || [])) {
       const color = tray.tray_color ? '#' + tray.tray_color.substring(0, 6) : '#333';
-      const label = tray.tray_type ? `${tray.tray_type}` : '<span class="nil">empty</span>';
+      const label = tray.tray_type || '<span class="nil">empty</span>';
       html += `<div class="ams-slot">
         <div class="ams-swatch" style="background:${color}"></div>
         <span class="ams-label">${val(tray.id,'?')}:</span>
@@ -274,6 +333,16 @@ function stageLabel(stg) {
   return stages[stg] || `STAGE_${stg}`;
 }
 
+// ── Row builders ──────────────────────────────────────────────
+function row(label, value, extraClass = '') {
+  return `<tr class="${extraClass}"><td class="label">${label}</td><td class="value">${value}</td></tr>`;
+}
+
+function sep(extraClass = '') {
+  return `<tr class="${extraClass}"><td colspan="2"><hr class="section-sep"></td></tr>`;
+}
+
+// ── Card creation & update ────────────────────────────────────
 function createCard(serial, name, host) {
   const article = document.createElement('article');
   article.className = 'card offline';
@@ -283,7 +352,7 @@ function createCard(serial, name, host) {
       <span class="card-title">${name}</span>
       <span class="badge offline" id="badge-${serial}">OFFLINE</span>
     </div>
-    <div class="card-host">${host}</div>
+    <div class="card-host full-only">${host}</div>
     <table id="table-${serial}">
       <tr><td class="label" colspan="2"><span class="nil">waiting for data...</span></td></tr>
     </table>`;
@@ -307,57 +376,52 @@ function updateCard(msg) {
   badge.className = 'badge ' + (online ? 'online' : 'offline');
 
   const pct = d.mc_percent;
-  const progressStr = pct !== undefined
-    ? `${progressBar(pct)} ${pct}%  ETA: ${formatETA(d.mc_remaining_time)}`
+  const eta = formatETA(d.mc_remaining_time);
+  const progressVal = pct !== undefined
+    ? `<span class="full-only">${progressBar(pct)} </span>${pct}%  ETA: ${eta}`
     : '<span class="nil">---</span>';
 
   const layerStr = (d.layer_num !== undefined && d.total_layer_num !== undefined)
     ? `${d.layer_num} / ${d.total_layer_num}`
     : '<span class="nil">---</span>';
 
-  const rows = [
-    ['FILE',    `<span style="word-break:break-all">${val(d.subtask_name)}</span>`],
-    ['STATE',   val(d.gcode_state)],
-    ['STAGE',   stageLabel(d.stg_cur)],
-    null,
-    ['PROGRESS', progressStr],
-    ['LAYERS',   layerStr],
-    null,
-    ['NOZZLE',   renderTemp(d.nozzle_temper, d.nozzle_target_temper)],
-    ['BED',      renderTemp(d.bed_temper, d.bed_target_temper)],
-    ['CHAMBER',  d.chamber_temper !== undefined ? `${d.chamber_temper}°C` : '<span class="nil">---</span>'],
-    null,
-    ['WIFI',     val(d.wifi_signal)],
-    ['ERROR',    d.print_error !== undefined ? (d.print_error === 0 ? '<span class="temp-ok">NONE</span>' : `<span class="temp-hot">${d.print_error}</span>`) : '<span class="nil">---</span>'],
-  ];
+  const hasError = d.print_error !== undefined && d.print_error !== 0;
+  const errorVal = d.print_error !== undefined
+    ? (d.print_error === 0 ? '<span class="temp-ok">NONE</span>' : `<span class="temp-hot">${d.print_error}</span>`)
+    : '<span class="nil">---</span>';
 
   let html = '';
-  for (const row of rows) {
-    if (row === null) {
-      html += `<tr><td colspan="2"><hr class="section-sep"></td></tr>`;
-    } else {
-      html += `<tr><td class="label">${row[0]}</td><td class="value">${row[1]}</td></tr>`;
-    }
-  }
+  html += row('FILE',     `<span style="word-break:break-all">${val(d.subtask_name)}</span>`);
+  html += row('STATE',    val(d.gcode_state));
+  html += row('STAGE',    stageLabel(d.stg_cur));
+  html += sep('full-only');
+  html += row('PROGRESS', progressVal);
+  html += row('LAYERS',   layerStr, 'full-only');
+  html += sep('full-only');
+  html += row('NOZZLE',   renderTemp(d.nozzle_temper, d.nozzle_target_temper));
+  html += row('BED',      renderTemp(d.bed_temper, d.bed_target_temper), 'full-only');
+  html += row('CHAMBER',  d.chamber_temper !== undefined ? `${d.chamber_temper}°C` : '<span class="nil">---</span>', 'full-only');
+  html += sep('full-only');
+  html += row('WIFI',     val(d.wifi_signal), 'full-only');
+  html += row('ERROR',    errorVal, hasError ? '' : 'error-none');
 
   if (d.ams !== undefined) {
-    html += `<tr><td colspan="2"><hr class="section-sep"></td></tr>`;
-    html += `<tr><td class="label">AMS</td><td class="value">${renderAMS(d.ams)}</td></tr>`;
+    html += sep('full-only');
+    html += row('AMS', renderAMS(d.ams), 'full-only');
   }
 
   document.getElementById(`table-${serial}`).innerHTML = html;
 }
 
-// Clock
+// ── Clock ─────────────────────────────────────────────────────
 function tickClock() {
-  const now = new Date();
   document.getElementById('clock').textContent =
-    now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+    new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
 }
 tickClock();
 setInterval(tickClock, 1000);
 
-// WebSocket
+// ── WebSocket ─────────────────────────────────────────────────
 let ws = null;
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';

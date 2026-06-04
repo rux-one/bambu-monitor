@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/bart/code/bambu-monitor
-ExecStart=/home/bart/code/bambu-monitor/venv/bin/python main.py
+ExecStart=/bin/sh /home/bart/code/bambu-monitor/run.sh
 Restart=on-failure
 RestartSec=5
 
