@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BAMBU MONITOR</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green: #00ff41;
+    --green-dim: #00cc33;
+    --green-glow: rgba(0,255,65,0.15);
+    --red: #ff3300;
+    --amber: #ffaa00;
+    --blue: #00aaff;
+    --bg: #0a0a0a;
+    --bg-card: #0f0f0f;
+    --border: #00ff41;
+    --font: 'Courier New', Courier, monospace;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--green-dim);
+    background: #0a0a0a;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  header h1 {
+    font-size: 14px;
+    letter-spacing: 0.25em;
+    font-weight: normal;
+  }
+
+  header h1 span {
+    color: var(--green-dim);
+  }
+
+  #clock {
+    font-size: 12px;
+    color: var(--green-dim);
+    letter-spacing: 0.1em;
+  }
+
+  #ws-status {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+  }
+
+  #ws-status.connected    { color: var(--green); }
+  #ws-status.disconnected { color: var(--red); }
+
+  main {
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    padding: 14px 16px;
+    box-shadow: 0 0 10px var(--green-glow);
+    transition: opacity 0.3s;
+  }
+
+  .card.offline {
+    border-color: var(--red);
+    box-shadow: 0 0 6px rgba(255,51,0,0.15);
+    opacity: 0.65;
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #1a1a1a;
+  }
+
+  .card-title {
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    font-weight: bold;
+  }
+
+  .badge {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    padding: 1px 5px;
+    border: 1px solid currentColor;
+  }
+
+  .badge.online  { color: var(--green); }
+  .badge.offline { color: var(--red); }
+
+  .card-host {
+    font-size: 10px;
+    color: var(--green-dim);
+    margin-bottom: 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  td {
+    padding: 2px 0;
+    vertical-align: top;
+  }
+
+  td.label {
+    color: var(--green-dim);
+    width: 46%;
+    padding-right: 8px;
+    white-space: nowrap;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  td.value {
+    color: var(--green);
+    word-break: break-all;
+  }
+
+  .section-sep {
+    border: none;
+    border-top: 1px solid #1a1a1a;
+    margin: 8px 0;
+  }
+
+  .progress-wrap {
+    font-family: var(--font);
+    letter-spacing: 0;
+    color: var(--green);
+  }
+
+  .temp-hot    { color: var(--amber); }
+  .temp-cold   { color: var(--blue); }
+  .temp-ok     { color: var(--green); }
+
+  .ams-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3px 10px;
+    margin-top: 2px;
+  }
+
+  .ams-slot {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+  }
+
+  .ams-swatch {
+    width: 10px;
+    height: 10px;
+    border: 1px solid #333;
+    flex-shrink: 0;
+  }
+
+  .ams-label { color: var(--green-dim); }
+
+  .nil { color: #333; }
+
+  @media (max-width: 400px) {
+    main { padding: 10px; gap: 10px; }
+    .card { padding: 10px 12px; }
+    header { padding: 8px 12px; }
+    header h1 { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>//</span> BAMBU MONITOR</h1>
+  <div style="display:flex;gap:12px;align-items:center">
+    <span id="ws-status" class="disconnected">WS: OFF</span>
+    <span id="clock"></span>
+  </div>
+</header>
+
+<main id="grid"></main>
+
+<script>
+const PRINTER_ORDER = [];
+
+function val(v, fallback = '---') {
+  return (v !== undefined && v !== null && v !== '') ? v : fallback;
+}
+
+function progressBar(pct, width = 20) {
+  const filled = Math.round((pct / 100) * width);
+  return '[' + '█'.repeat(filled) + '░'.repeat(width - filled) + ']';
+}
+
+function formatETA(minutes) {
+  if (minutes === undefined || minutes === null) return '---';
+  const m = parseInt(minutes, 10);
+  if (isNaN(m) || m < 0) return '---';
+  if (m === 0) return '0m';
+  const h = Math.floor(m / 60), rem = m % 60;
+  return h > 0 ? `${h}h ${rem}m` : `${rem}m`;
+}
+
+function tempClass(cur, target) {
+  if (target === undefined || target === null || target === 0) return 'temp-ok';
+  const diff = cur - target;
+  if (Math.abs(diff) <= 3) return 'temp-ok';
+  return diff < 0 ? 'temp-cold' : 'temp-hot';
+}
+
+function renderTemp(cur, target) {
+  if (cur === undefined) return '<span class="nil">---</span>';
+  const cls = tempClass(parseFloat(cur), parseFloat(target));
+  const t = target !== undefined ? ` <span class="nil">→</span> ${target}°C` : '';
+  return `<span class="${cls}">${cur}°C${t}</span>`;
+}
+
+function renderAMS(amsData) {
+  if (!amsData || !amsData.ams || !amsData.ams.length) return '<span class="nil">---</span>';
+  let html = '';
+  for (const unit of amsData.ams) {
+    html += `<div class="ams-label" style="font-size:10px;margin-top:4px">AMS ${val(unit.id)} &nbsp; hum:${val(unit.humidity)} &nbsp; ${val(unit.temp)}°C</div>`;
+    html += '<div class="ams-grid">';
+    for (const tray of (unit.tray || [])) {
+      const color = tray.tray_color ? '#' + tray.tray_color.substring(0, 6) : '#333';
+      const label = tray.tray_type ? `${tray.tray_type}` : '<span class="nil">empty</span>';
+      html += `<div class="ams-slot">
+        <div class="ams-swatch" style="background:${color}"></div>
+        <span class="ams-label">${val(tray.id,'?')}:</span>
+        <span>${label}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+function stageLabel(stg) {
+  const stages = {
+    0: 'IDLE', 1: 'AUTO_BED_LEVELING', 2: 'HEATBED_PREHEATING',
+    3: 'SWEEPING_XY_MECH_MODE', 4: 'CHANGING_FILAMENT', 5: 'M400_PAUSE',
+    6: 'PAUSED_FILAMENT_RUNOUT', 7: 'HEATING_HOTEND', 8: 'CALIBRATING_EXTRUSION',
+    9: 'SCANNING_BED_SURFACE', 10: 'INSPECTING_FIRST_LAYER',
+    11: 'IDENTIFYING_BUILD_PLATE_TYPE', 12: 'CALIBRATING_MICRO_LIDAR',
+    13: 'HOMING_TOOLHEAD', 14: 'CLEANING_NOZZLE_TIP', 15: 'CHECKING_EXTRUDER_TEMP',
+    16: 'PAUSED_USER', 17: 'PAUSED_FRONT_COVER_FALLING', 18: 'CALIBRATING_EXTRUSION_FLOW',
+    19: 'PAUSED_NOZZLE_TEMP_MALFUNCTION', 20: 'PAUSED_HEAT_BED_TEMP_MALFUNCTION',
+  };
+  if (stg === undefined || stg === null) return '---';
+  return stages[stg] || `STAGE_${stg}`;
+}
+
+function createCard(serial, name, host) {
+  const article = document.createElement('article');
+  article.className = 'card offline';
+  article.id = `card-${serial}`;
+  article.innerHTML = `
+    <div class="card-header">
+      <span class="card-title">${name}</span>
+      <span class="badge offline" id="badge-${serial}">OFFLINE</span>
+    </div>
+    <div class="card-host">${host}</div>
+    <table id="table-${serial}">
+      <tr><td class="label" colspan="2"><span class="nil">waiting for data...</span></td></tr>
+    </table>`;
+  return article;
+}
+
+function updateCard(msg) {
+  const { serial, name, host, online, data: d } = msg;
+
+  let card = document.getElementById(`card-${serial}`);
+  if (!card) {
+    if (!PRINTER_ORDER.includes(serial)) PRINTER_ORDER.push(serial);
+    card = createCard(serial, name, host);
+    document.getElementById('grid').appendChild(card);
+  }
+
+  card.className = 'card' + (online ? '' : ' offline');
+
+  const badge = document.getElementById(`badge-${serial}`);
+  badge.textContent = online ? 'ONLINE' : 'OFFLINE';
+  badge.className = 'badge ' + (online ? 'online' : 'offline');
+
+  const pct = d.mc_percent;
+  const progressStr = pct !== undefined
+    ? `${progressBar(pct)} ${pct}%  ETA: ${formatETA(d.mc_remaining_time)}`
+    : '<span class="nil">---</span>';
+
+  const layerStr = (d.layer_num !== undefined && d.total_layer_num !== undefined)
+    ? `${d.layer_num} / ${d.total_layer_num}`
+    : '<span class="nil">---</span>';
+
+  const rows = [
+    ['FILE',    `<span style="word-break:break-all">${val(d.subtask_name)}</span>`],
+    ['STATE',   val(d.gcode_state)],
+    ['STAGE',   stageLabel(d.stg_cur)],
+    null,
+    ['PROGRESS', progressStr],
+    ['LAYERS',   layerStr],
+    null,
+    ['NOZZLE',   renderTemp(d.nozzle_temper, d.nozzle_target_temper)],
+    ['BED',      renderTemp(d.bed_temper, d.bed_target_temper)],
+    ['CHAMBER',  d.chamber_temper !== undefined ? `${d.chamber_temper}°C` : '<span class="nil">---</span>'],
+    null,
+    ['WIFI',     val(d.wifi_signal)],
+    ['ERROR',    d.print_error !== undefined ? (d.print_error === 0 ? '<span class="temp-ok">NONE</span>' : `<span class="temp-hot">${d.print_error}</span>`) : '<span class="nil">---</span>'],
+  ];
+
+  let html = '';
+  for (const row of rows) {
+    if (row === null) {
+      html += `<tr><td colspan="2"><hr class="section-sep"></td></tr>`;
+    } else {
+      html += `<tr><td class="label">${row[0]}</td><td class="value">${row[1]}</td></tr>`;
+    }
+  }
+
+  if (d.ams !== undefined) {
+    html += `<tr><td colspan="2"><hr class="section-sep"></td></tr>`;
+    html += `<tr><td class="label">AMS</td><td class="value">${renderAMS(d.ams)}</td></tr>`;
+  }
+
+  document.getElementById(`table-${serial}`).innerHTML = html;
+}
+
+// Clock
+function tickClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+// WebSocket
+let ws = null;
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('ws-status').textContent = 'WS: ON';
+    document.getElementById('ws-status').className = 'connected';
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'state') updateCard(msg);
+    } catch (_) {}
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-status').textContent = 'WS: OFF';
+    document.getElementById('ws-status').className = 'disconnected';
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+connect();
+</script>
+</body>
+</html>

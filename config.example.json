@@ -1,0 +1,10 @@
+{
+  "printers": [
+    {
+      "name": "Printer A",
+      "host": "192.168.1.x",
+      "serial": "YOUR_SERIAL",
+      "access_code": "YOUR_ACCESS_CODE"
+    }
+  ]
+}
