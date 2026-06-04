@@ -10,12 +10,13 @@ from fastapi.responses import FileResponse
 _CONFIG_FILE = "config.json"
 try:
     with open(_CONFIG_FILE) as _f:
-        PRINTERS: list[dict] = json.load(_f)["printers"]
+        _config = json.load(_f)
+        PRINTERS: list[dict] = _config["printers"]
+        HTTP_PORT: int = _config.get("http_port", 8080)
 except FileNotFoundError:
     raise SystemExit(f"Missing {_CONFIG_FILE} — copy config.example.json and fill in your printer details.")
 
 PORT = 8883
-HTTP_PORT = 8080
 
 PUSH_ALL_CMD = json.dumps({"pushing": {"sequence_id": "1", "command": "pushall"}})
 

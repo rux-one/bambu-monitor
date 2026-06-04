@@ -23,6 +23,7 @@ cp config.example.json config.json
 
 ```json
 {
+  "http_port": 8080,
   "printers": [
     {
       "name": "A1-mini",
@@ -33,6 +34,8 @@ cp config.example.json config.json
   ]
 }
 ```
+
+`http_port` is optional and defaults to `8080`.
 
 `config.json` is gitignored — credentials stay off disk.  
 The serial and access code are visible in Bambu Studio under the device settings page.
